@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   calculateVikor,
+  commitCsvImport,
   createAlternative,
   createCriterion,
   createScore,
@@ -13,6 +14,7 @@ import {
   listAlternatives,
   listCriteria,
   listScores,
+  previewCsvImport,
   updateAlternative,
   updateCriterion,
   updateScore,
@@ -22,6 +24,15 @@ const emptyAlternative = { code: "", name: "" };
 const emptyCriterion = { code: "", name: "", weight: "", type: "benefit" };
 const emptyScore = { alternative_id: "", criterion_id: "", value: "" };
 const pageSizeOptions = [10, 20, 50, 100];
+
+const buildImportCriteria = (count) =>
+  Array.from({ length: count }, (_, index) => ({
+    code: `C${index + 1}`,
+    name: "",
+    weight: "",
+    type: "cost",
+    valueColumn: "",
+  }));
 
 function App() {
   const [alternatives, setAlternatives] = useState([]);
@@ -39,6 +50,15 @@ function App() {
   const [editingScoreId, setEditingScoreId] = useState(null);
   const [vValue, setVValue] = useState("0.5");
   const [vikorSearch, setVikorSearch] = useState("");
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [importMode, setImportMode] = useState("replace");
+  const [criterionCount, setCriterionCount] = useState(5);
+  const [importAlternativeCodeColumn, setImportAlternativeCodeColumn] = useState("");
+  const [importAlternativeCodeColumn2, setImportAlternativeCodeColumn2] = useState("");
+  const [importAlternativeNameColumn, setImportAlternativeNameColumn] = useState("");
+  const [importCriteria, setImportCriteria] = useState(buildImportCriteria(5));
+  const [importResult, setImportResult] = useState(null);
   const [activeSection, setActiveSection] = useState("alternatives");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -166,6 +186,63 @@ function App() {
     });
   };
 
+  const handleCsvPreview = (file) => {
+    if (!file) return;
+    setCsvFile(file);
+    setImportResult(null);
+    runAction(async () => {
+      const preview = await previewCsvImport(file);
+      setCsvPreview(preview);
+      setImportAlternativeCodeColumn(preview.headers[0] || "");
+      setImportAlternativeCodeColumn2("");
+      setImportAlternativeNameColumn(preview.headers[1] || preview.headers[0] || "");
+      setImportCriteria((currentCriteria) =>
+        currentCriteria.map((criterion, index) => ({
+          ...criterion,
+          name: criterion.name || preview.headers[index + 2] || criterion.code,
+          valueColumn: criterion.valueColumn || preview.headers[index + 2] || "",
+        })),
+      );
+    });
+  };
+
+  const changeCriterionCount = (value) => {
+    const nextCount = Math.max(1, Number(value) || 1);
+    setCriterionCount(nextCount);
+    setImportCriteria((currentCriteria) => {
+      const nextCriteria = buildImportCriteria(nextCount);
+      return nextCriteria.map((criterion, index) => ({
+        ...criterion,
+        ...(currentCriteria[index] || {}),
+      }));
+    });
+  };
+
+  const updateImportCriterion = (index, key, value) => {
+    setImportCriteria((currentCriteria) =>
+      currentCriteria.map((criterion, criterionIndex) =>
+        criterionIndex === index ? { ...criterion, [key]: value } : criterion,
+      ),
+    );
+  };
+
+  const commitImport = () => {
+    if (!csvFile) {
+      setError("Upload CSV dulu sebelum import final.");
+      return;
+    }
+    runAction(async () => {
+      const result = await commitCsvImport(csvFile, {
+        mode: importMode,
+        alternativeCodeColumns: [importAlternativeCodeColumn, importAlternativeCodeColumn2].filter(Boolean),
+        alternativeNameColumn: importAlternativeNameColumn,
+        criteria: importCriteria,
+      });
+      setImportResult(result);
+      await loadData();
+    });
+  };
+
   const searchTerm = vikorSearch.trim().toLowerCase();
   const filteredRanking =
     ranking?.ranking.filter((item) => {
@@ -205,6 +282,7 @@ function App() {
           ["criteria", "Kriteria"],
           ["scores", "Scores"],
           ["matrix", "Matrix"],
+          ["import", "Import CSV"],
           ["vikor", "VIKOR"],
         ].map(([key, label]) => (
           <button
@@ -477,6 +555,108 @@ function App() {
         <MatrixTable matrix={matrix} criteria={criteria} />
       )}
 
+      {activeSection === "import" && (
+        <section className="panel full-width import-wizard">
+          <div className="calc-header">
+            <div>
+              <h2>Import CSV</h2>
+              <p>Upload CSV, mapping kolom, validasi, lalu import setelah konfirmasi.</p>
+            </div>
+            <label className="v-input">
+              File CSV
+              <input type="file" accept=".csv" onChange={(event) => handleCsvPreview(event.target.files?.[0])} />
+            </label>
+          </div>
+
+          {csvPreview && (
+            <div className="import-grid">
+              <div className="import-card">
+                <h3>1. Ringkasan File</h3>
+                <p><strong>{csvFile?.name}</strong></p>
+                <p>{csvPreview.totalRows} baris data ditemukan.</p>
+                <div className="pill-row">
+                  {csvPreview.headers.map((header) => <span className="pill" key={header}>{header}</span>)}
+                </div>
+              </div>
+
+              <div className="import-card">
+                <h3>2. Mode Import</h3>
+                <label>Mode
+                  <select value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                    <option value="replace">Replace semua data lama</option>
+                    <option value="upsert">Tambah/update data</option>
+                  </select>
+                </label>
+                <label>Jumlah kriteria
+                  <input type="number" min="1" value={criterionCount} onChange={(event) => changeCriterionCount(event.target.value)} />
+                </label>
+              </div>
+
+              <div className="import-card">
+                <h3>3. Mapping Alternatif</h3>
+                <label>Kolom kode alternatif utama
+                  <ColumnSelect headers={csvPreview.headers} value={importAlternativeCodeColumn} onChange={setImportAlternativeCodeColumn} />
+                </label>
+                <label>Kolom kode tambahan opsional
+                  <ColumnSelect headers={csvPreview.headers} value={importAlternativeCodeColumn2} onChange={setImportAlternativeCodeColumn2} allowEmptyLabel="Tidak pakai" />
+                </label>
+                <label>Kolom nama alternatif
+                  <ColumnSelect headers={csvPreview.headers} value={importAlternativeNameColumn} onChange={setImportAlternativeNameColumn} />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {csvPreview && (
+            <div className="import-card full-width">
+              <h3>4. Mapping Kriteria</h3>
+              <div className="criteria-mapping-grid">
+                {importCriteria.map((criterion, index) => (
+                  <div className="criterion-map" key={index}>
+                    <h4>{criterion.code}</h4>
+                    <label>Kode
+                      <input value={criterion.code} onChange={(event) => updateImportCriterion(index, "code", event.target.value)} />
+                    </label>
+                    <label>Nama
+                      <input value={criterion.name} onChange={(event) => updateImportCriterion(index, "name", event.target.value)} placeholder="Nama kriteria" />
+                    </label>
+                    <label>Bobot
+                      <input type="number" step="0.01" value={criterion.weight} onChange={(event) => updateImportCriterion(index, "weight", event.target.value)} placeholder="0.15 atau 15" />
+                    </label>
+                    <label>Tipe
+                      <select value={criterion.type} onChange={(event) => updateImportCriterion(index, "type", event.target.value)}>
+                        <option value="cost">Cost</option>
+                        <option value="benefit">Benefit</option>
+                      </select>
+                    </label>
+                    <label>Kolom nilai
+                      <ColumnSelect headers={csvPreview.headers} value={criterion.valueColumn} onChange={(value) => updateImportCriterion(index, "valueColumn", value)} />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {csvPreview && (
+            <div className="import-card full-width">
+              <h3>5. Preview dan Konfirmasi</h3>
+              <DataTable headers={csvPreview.headers} rows={csvPreview.sampleRows.map((row) => csvPreview.headers.map((header) => row[header]))} />
+              <div className="button-row import-actions">
+                <button type="button" onClick={commitImport}>Konfirmasi Import CSV</button>
+                <button type="button" className="muted" onClick={() => { setCsvFile(null); setCsvPreview(null); setImportResult(null); }}>Reset Upload</button>
+              </div>
+            </div>
+          )}
+
+          {importResult && (
+            <div className="notice">
+              {importResult.message}: {importResult.alternatives} alternatif, {importResult.criteria} kriteria, {importResult.scores_created} scores baru, {importResult.scores_updated} scores update.
+            </div>
+          )}
+        </section>
+      )}
+
       {activeSection === "vikor" && (
         <section className="panel full-width">
           <div className="calc-header">
@@ -572,6 +752,17 @@ function Actions({ onEdit, onDelete }) {
         Hapus
       </button>
     </div>
+  );
+}
+
+function ColumnSelect({ headers, value, onChange, allowEmptyLabel = "Pilih kolom" }) {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <option value="">{allowEmptyLabel}</option>
+      {headers.map((header) => (
+        <option key={header} value={header}>{header}</option>
+      ))}
+    </select>
   );
 }
 

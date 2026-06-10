@@ -260,6 +260,39 @@ frontend/src/api.js
 
 Kalau endpoint backend berubah, biasanya cukup ubah `frontend/src/api.js`.
 
+## Fitur Import CSV
+
+Frontend memiliki menu `Import CSV` untuk memasukkan data dari file `.csv` tanpa menulis SQL manual.
+
+Alurnya:
+
+1. Buka frontend di `http://localhost:5173`.
+2. Pilih tab `Import CSV`.
+3. Upload file `.csv`.
+4. Pilih mode import:
+   - `Replace semua data lama`: hapus data lama lalu isi dari CSV.
+   - `Tambah/update data`: data lama tetap ada, data dengan kode sama akan di-update.
+5. Masukkan jumlah kriteria.
+6. Pilih kolom untuk kode alternatif dan nama alternatif. Jika kode alternatif pada CSV tidak unik, gunakan kolom kode tambahan opsional, misalnya `NAMA + KODE`.
+7. Untuk setiap kriteria, isi kode, nama, bobot, tipe `benefit/cost`, dan kolom nilai dari CSV.
+8. Cek preview data.
+9. Klik `Konfirmasi Import CSV`.
+
+Validasi import:
+
+- Total bobot kriteria harus `1.0`.
+- Kode alternatif tidak boleh kosong.
+- Kode alternatif hasil mapping tidak boleh duplikat. Jika satu kolom duplikat, gabungkan dengan kolom tambahan opsional.
+- Setiap kolom nilai kriteria harus berupa angka.
+- Setiap kriteria harus punya tepat satu kolom nilai dari CSV.
+
+Backend endpoint untuk fitur ini:
+
+```text
+POST /api/import/csv/preview
+POST /api/import/csv/commit
+```
+
 ## Cara Mengubah Backend
 
 File penting backend:

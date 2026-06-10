@@ -1,8 +1,9 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
 async function apiRequest(path, options = {}) {
+  const isFormData = options.body instanceof FormData
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
+    headers: isFormData ? options.headers : {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
@@ -46,3 +47,16 @@ export const getScoreMatrix = () => apiRequest('/scores/matrix')
 export const calculateVikor = (v) => apiRequest(`/vikor/calculate?v=${v}`)
 export const getRanking = (v) => apiRequest(`/vikor/ranking?v=${v}`)
 export const getCompromise = (v) => apiRequest(`/vikor/compromise?v=${v}`)
+
+export const previewCsvImport = (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiRequest('/import/csv/preview', { method: 'POST', body: formData })
+}
+
+export const commitCsvImport = (file, mapping) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('payload', JSON.stringify(mapping))
+  return apiRequest('/import/csv/commit', { method: 'POST', body: formData })
+}
