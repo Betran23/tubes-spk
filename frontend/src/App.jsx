@@ -7,6 +7,7 @@ import {
   createScore,
   deleteAlternative,
   deleteCriterion,
+  deleteData,
   deleteScore,
   getCompromise,
   getRanking,
@@ -24,6 +25,28 @@ const emptyAlternative = { code: "", name: "" };
 const emptyCriterion = { code: "", name: "", weight: "", type: "benefit" };
 const emptyScore = { alternative_id: "", criterion_id: "", value: "" };
 const pageSizeOptions = [10, 20, 50, 100];
+const maintenanceTargets = [
+  {
+    value: "all",
+    label: "Hapus semua data",
+    description: "Menghapus scores, kriteria, dan alternatif. Riwayat migrasi database tetap aman.",
+  },
+  {
+    value: "scores",
+    label: "Hapus scores saja",
+    description: "Mengosongkan nilai penilaian tanpa menghapus alternatif dan kriteria.",
+  },
+  {
+    value: "alternatives",
+    label: "Hapus alternatif",
+    description: "Menghapus alternatif beserta scores yang terhubung.",
+  },
+  {
+    value: "criteria",
+    label: "Hapus kriteria",
+    description: "Menghapus kriteria beserta scores yang terhubung.",
+  },
+];
 
 const buildImportCriteria = (count) =>
   Array.from({ length: count }, (_, index) => ({
@@ -59,6 +82,9 @@ function App() {
   const [importAlternativeNameColumn, setImportAlternativeNameColumn] = useState("");
   const [importCriteria, setImportCriteria] = useState(buildImportCriteria(5));
   const [importResult, setImportResult] = useState(null);
+  const [maintenanceTarget, setMaintenanceTarget] = useState("all");
+  const [maintenanceConfirm, setMaintenanceConfirm] = useState("");
+  const [maintenanceResult, setMaintenanceResult] = useState(null);
   const [activeSection, setActiveSection] = useState("alternatives");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -91,6 +117,13 @@ function App() {
     setCriteria(criterionData);
     setScores(scoreData);
     setMatrix(matrixData);
+  };
+
+  const resetVikorResults = () => {
+    setCalculation(null);
+    setRanking(null);
+    setCompromise(null);
+    setVikorSearch("");
   };
 
   useEffect(() => {
@@ -239,6 +272,21 @@ function App() {
         criteria: importCriteria,
       });
       setImportResult(result);
+      resetVikorResults();
+      await loadData();
+    });
+  };
+
+  const submitMaintenanceDelete = (event) => {
+    event.preventDefault();
+    runAction(async () => {
+      const result = await deleteData({
+        target: maintenanceTarget,
+        confirm: maintenanceConfirm,
+      });
+      setMaintenanceResult(result);
+      setMaintenanceConfirm("");
+      resetVikorResults();
       await loadData();
     });
   };
@@ -284,10 +332,11 @@ function App() {
           ["matrix", "Matrix"],
           ["import", "Import CSV"],
           ["vikor", "VIKOR"],
+          ["maintenance", "Maintenance"],
         ].map(([key, label]) => (
           <button
             key={key}
-            className={activeSection === key ? "active" : ""}
+            className={`${activeSection === key ? "active" : ""} ${key === "vikor" ? "vikor-tab" : ""}`.trim()}
             onClick={() => setActiveSection(key)}
           >
             {label}
@@ -737,6 +786,63 @@ function App() {
               <summary>Detail normalisasi</summary>
               <pre>{JSON.stringify(calculation.results, null, 2)}</pre>
             </details>
+          )}
+        </section>
+      )}
+
+      {activeSection === "maintenance" && (
+        <section className="panel full-width maintenance-panel">
+          <div className="danger-header">
+            <div>
+              <p className="eyebrow">AREA BERBAHAYA</p>
+              <h2>Hapus Data Database</h2>
+              <p>
+                Gunakan ini untuk mengosongkan data input aplikasi. Aksi ini tidak bisa dibatalkan dari dashboard.
+              </p>
+            </div>
+            <div className="danger-stamp">HAPUS</div>
+          </div>
+
+          <form className="maintenance-grid" onSubmit={submitMaintenanceDelete}>
+            <div className="maintenance-options">
+              {maintenanceTargets.map((target) => (
+                <label className="maintenance-option" key={target.value}>
+                  <input
+                    type="radio"
+                    name="maintenance-target"
+                    value={target.value}
+                    checked={maintenanceTarget === target.value}
+                    onChange={(event) => setMaintenanceTarget(event.target.value)}
+                  />
+                  <span>
+                    <strong>{target.label}</strong>
+                    <small>{target.description}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            <div className="confirm-card">
+              <h3>Konfirmasi</h3>
+              <p>Ketik <strong>HAPUS</strong> untuk mengaktifkan tombol hapus.</p>
+              <label>
+                Teks konfirmasi
+                <input
+                  value={maintenanceConfirm}
+                  onChange={(event) => setMaintenanceConfirm(event.target.value)}
+                  placeholder="HAPUS"
+                />
+              </label>
+              <button type="submit" className="danger" disabled={maintenanceConfirm !== "HAPUS"}>
+                Jalankan Hapus
+              </button>
+            </div>
+          </form>
+
+          {maintenanceResult && (
+            <div className="notice">
+              Data berhasil dihapus untuk target {maintenanceResult.target}: {Object.entries(maintenanceResult.deleted).map(([table, count]) => `${table} ${count}`).join(", ")}.
+            </div>
           )}
         </section>
       )}

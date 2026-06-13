@@ -48,6 +48,8 @@ export const calculateVikor = (v) => apiRequest(`/vikor/calculate?v=${v}`)
 export const getRanking = (v) => apiRequest(`/vikor/ranking?v=${v}`)
 export const getCompromise = (v) => apiRequest(`/vikor/compromise?v=${v}`)
 
+export const deleteData = (payload) => apiRequest('/maintenance/data', jsonBody(payload, 'DELETE'))
+
 export const previewCsvImport = (file) => {
   const formData = new FormData()
   formData.append('file', file)
